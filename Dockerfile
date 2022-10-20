@@ -72,6 +72,8 @@ RUN set -x && \
     mkdir -p /var/tmp/nginx && \
     chown nginx:www-data /var/tmp/nginx && chmod g+rx /var/tmp/nginx
 COPY files/ /
+CMD ["cd /data/upload/include/plugins"]
+CMD ["php make.php hydrate"]
 VOLUME ["/data/upload/include/plugins","/data/upload/include/i18n","/var/log/nginx"]
 EXPOSE 80
 CMD ["/data/bin/start.sh"]
