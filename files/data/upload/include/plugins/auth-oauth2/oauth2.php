@@ -64,6 +64,7 @@ trait OAuth2AuthenticationTrait {
     private $provider;
     // debug mode flag
     private $debug = false;
+
     // SESSION store for data like AuthNRequestID
     private $session;
     // Configuration store
@@ -214,7 +215,7 @@ implements OAuth2AuthBackend  {
     }
 
     private function onSignIn() {
-        $this->redirectTo(osTicket::get_base_url().'scp/');
+        $this->redirectTo($_SESSION['_staff']['auth']['dest'] ?: osTicket::get_base_url().'scp/');
     }
 
 }
@@ -250,7 +251,7 @@ implements OAuth2AuthBackend {
     }
 
     private function onSignIn() {
-        $this->redirectTo(osTicket::get_base_url());
+        $this->redirectTo($_SESSION['_client']['auth']['dest'] ?: osTicket::get_base_url());
     }
 }
 
@@ -268,6 +269,14 @@ class OAuth2EmailAuthBackend implements OAuth2AuthBackend  {
     const ERR_EMAIL_ATTR = 1;
     const ERR_EMAIL_MISMATCH = 2;
     const ERR_REFRESH_TOKEN = 3;
+
+    private function isStrict() {
+        // TODO: Require osTicket v1.18 and delegate strict checking to
+        // the email account ($this->account->isStrict())
+        // For now the flag is being set via the provider by overloading
+        // backend id
+        return ($this->provider && $this->provider->isStrict());
+    }
 
     function getEmailId() {
         return $this->account->getEmailId();
@@ -302,13 +311,21 @@ class OAuth2EmailAuthBackend implements OAuth2AuthBackend  {
                     'resource_owner_id' => $token->getResourceOwnerId(),
                     'resource_owner_email' => $attrs['email'],
                 ];
+
                 if (!isset($attrs['email']))
                     $errors[$err] = $this->error_msg(self::ERR_EMAIL_ATTR, $attrs);
-                elseif (!$this->signIn($attrs))
-                    $errors[$err] = $this->error_msg(self::ERR_EMAIL_MISMATCH, $attrs);
                 elseif (!$info['refresh_token'])
                     $errors[$err] = $this->error_msg(self::ERR_REFRESH_TOKEN);
-                elseif (!$this->updateCredentials($info, $errors))
+                elseif (!$this->signIn($attrs) && $this->isStrict()) {
+                    // On strict mode email mismatch is an error
+                    // TODO: Move Strict checking to osTiket core on
+                    // credentials update.
+                    $errors[$err] = $this->error_msg(self::ERR_EMAIL_MISMATCH, $attrs);
+                }
+                // Update the credentials if no validation errors
+                if (!$errors
+                        && !$this->updateCredentials($info, $errors)
+                        && !isset($errors[$err]))
                      $errors[$err] = $this->error_msg(self::ERR_UNKNOWN);
             }
         } catch (Exception $ex) {
@@ -376,9 +393,16 @@ abstract class OAuth2ProviderBackend extends OAuth2AuthorizationBackend {
     private $plugin_id;
     static $defaults = [];
 
+    // Strict flag
+    private $strict = false;
+
     function __construct($options=[]) {
         if (isset($options['plugin_id']))
             $this->plugin_id = (int) $options['plugin_id'];
+    }
+
+    function isStrict() {
+        return (bool) $this->strict;
     }
 
     function getId() {
@@ -436,7 +460,7 @@ abstract class OAuth2ProviderBackend extends OAuth2AuthorizationBackend {
     }
 
     function getEmailAuthBackend($id)  {
-        list($auth, $a, $i) = self::parseId($id);
+        list($auth, $a, $i, $strict) = self::parseId($id);
         if (!strcasecmp($auth, $this->getId())
                 && ($plugin=$this->getPlugin())
                 && $plugin->isActive()
@@ -444,6 +468,8 @@ abstract class OAuth2ProviderBackend extends OAuth2AuthorizationBackend {
                 && ($config=$instance->getConfig())
                 && ($account=EmailAccount::lookup((int) $a))
                 && $account->isEnabled()) {
+            // Set strict flag
+            $this->strict = (bool) $strict;
             $bk = new  OAuth2EmailAuthBackend($config, $this);
             $bk->account = $account;
             return  $bk;
@@ -456,9 +482,11 @@ abstract class OAuth2ProviderBackend extends OAuth2AuthorizationBackend {
 
         try {
             $token = $bk->refreshAccessToken($refreshToken);
-            return [
-                'access_token' => $token->getToken(),
-                'expires' => $token->getExpires()];
+            return array_filter([
+		'access_token' => $token->getToken(),
+		'refresh_token' => $token->getRefreshToken(),
+		'expires' => $token->getExpires()
+	    ]);
         } catch( Exception $ex) {
             $errors['refresh_token'] = $ex->getMessage();
         }
@@ -486,6 +514,8 @@ abstract class OAuth2ProviderBackend extends OAuth2AuthorizationBackend {
                 GoogleOAuth2Provider($options));
         OAuth2AuthenticationBackend::register(new
                 MicrosoftOAuth2Provider($options));
+        OAuth2AuthenticationBackend::register(new
+                OktaOAuth2Provider($options));
         OAuth2AuthenticationBackend::register(new
                 OtherOAuth2Provider($options));
     }
@@ -522,7 +552,7 @@ class OAuth2Client extends GenericProvider {
 }
 
 
-class GenericOauth2Provider extends Oauth2ProviderBackend {
+class GenericOauth2Provider extends OAuth2ProviderBackend {
     static $id = 'oauth2:other';
     static $name = 'OAuth2 - Other';
     static $defaults = [];
@@ -584,6 +614,24 @@ class MicrosoftOauth2Provider extends GenericOauth2Provider {
         ];
 }
 
+class OktaOauth2Provider extends GenericOauth2Provider {
+    static $id = 'oauth2:okta';
+    static $name = 'Okta';
+    static $icon = 'icon-circle-blank';
+    static $defaults = [
+        'urlAuthorize' => 'https://${yourOktaDomain}/oauth2/v1/authorize',
+        'urlAccessToken' => 'https://${yourOktaDomain}/oauth2/v1/token',
+        'urlResourceOwnerDetails' => 'https://${yourOktaDomain}/oauth2/v1/userinfo',
+        'scopes' => 'openid profile email',
+        'auth_name' => 'Okta',
+        'auth_service' => 'Okta',
+        'attr_username' => 'userName',
+        'attr_email' => 'email',
+        'attr_givenname' => 'given_name',
+        'attr_surname' => 'family_name',
+        ];
+}
+
 // Authorization Email OAuth Providers
 class GenericEmailOauth2Provider extends GenericOauth2Provider {
    function getPluginInstance($id) {
@@ -617,7 +665,7 @@ class GoogleEmailOauth2Provider extends GenericEmailOauth2Provider {
     static $urlOptions = [
         'responseType' => 'code',
         'access_type' => 'offline',
-        'prompt' => 'login',
+        'prompt' => 'consent',
         ];
 }
 
@@ -637,7 +685,7 @@ class MicrosoftEmailOauth2Provider extends GenericEmailOauth2Provider {
     static $urlOptions = [
         'tenant' => 'common',
         'accessType' => 'offline_access',
-        'prompt' => 'login',
+        'prompt' => 'select_account',
         ];
 }
 ?>
