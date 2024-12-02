@@ -1,5 +1,5 @@
 # Deployment doesn't work on Alpine
-FROM php:8.2-cli AS deployer
+FROM php:8.1-cli AS deployer
 ENV OSTICKET_VERSION=1.18.1
 RUN set -x \
     && apt-get update \
@@ -14,8 +14,8 @@ RUN set -x \
     && chown -R root:root /data/upload/setup_hidden \
     && chmod -R go= /data/upload/setup_hidden
 
-FROM php:8.2-fpm-alpine3.20
-MAINTAINER Martin Campbell <martin@campbellsoftware.co.uk>
+FROM php:8.1-fpm-alpine3.20
+
 # environment for osticket
 ENV HOME=/data
 # setup workdir
@@ -72,8 +72,7 @@ RUN set -x && \
     mkdir -p /var/tmp/nginx && \
     chown nginx:www-data /var/tmp/nginx && chmod g+rx /var/tmp/nginx
 COPY files/ /
-CMD ["cd /data/upload/include/plugins"]
-CMD ["php make.php hydrate"]
+RUN cd /data/upload/include/plugins && php ./make.php hydrate
 VOLUME ["/data/upload/include/plugins","/data/upload/include/i18n","/var/log/nginx"]
 EXPOSE 80
 CMD ["/data/bin/start.sh"]

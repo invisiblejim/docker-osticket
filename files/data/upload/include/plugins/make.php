@@ -677,18 +677,12 @@ class PluginBuilder extends Module {
 
     function resolveDependencies($autoupdate=true) {
         // Build dependency list
-        $requires = $scripts = $extra = [];
+        $requires = array();
         foreach (glob(dirname(__file__).'/*/plugin.php') as $plugin) {
             $p = (include $plugin);
             if (isset($p['requires']))
                 foreach ($p['requires'] as $lib=>$info)
                     $requires[$lib] = $info['version'];
-            if (isset($p['scripts']))
-                foreach ($p['scripts'] as $name=>$script)
-                    $scripts[$name] = $script;
-            if (isset($p['extra']))
-                foreach ($p['extra'] as $package=>$namespaces)
-                    $extra[$package] = $namespaces;
         }
 
         // Write composer.json file
@@ -698,12 +692,10 @@ class PluginBuilder extends Module {
     "require": %s,
     "config": {
         "vendor-dir": "lib"
-    },
-    "scripts": %s,
-    "extra": %s
+    }
 }
 EOF;
-        $composer = sprintf($composer, json_encode($requires), json_encode($scripts), json_encode($extra));
+        $composer = sprintf($composer, json_encode($requires));
 
         if (!($fp = fopen('composer.json', 'w')))
             $this->fail('Unable to save "composer.json"');
