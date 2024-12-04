@@ -3,11 +3,11 @@ docker-osticket
 
 # Introduction
 
-Docker image for running version 1.17 of [OSTicket](http://osticket.com/).
+Docker image for running version 1.18.1 of [OSTicket](http://osticket.com/).
 
 This repo has been forked from the repo by [Martin Campbell](https://github.com/CampbellSoftwareSolutions/docker-osticket)  
 
-Modifications made are to enable uprade of OSTicket Docker instances to verison 1.17 to allow installation of the OAuth2 plugin which
+Modifications made are to enable uprade of OSTicket Docker instances to verison 1.18.1 to allow installation of the OAuth2 plugin which
 will allow OSTicket to continue to download mails from Google and Microsoft 365 mailboxes following the discontinuation of basic auth on those platforms.
 
 This image has been created from the original docker-osticket image by [Petter A. Helset](mailto:petter@helset.eu).
